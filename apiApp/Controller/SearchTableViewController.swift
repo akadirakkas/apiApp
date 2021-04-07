@@ -51,6 +51,7 @@ class SearchTableViewController: UITableViewController  , UIAnimatable{
         
     }
     private func setupTableView() {
+        tableView.isScrollEnabled = true
         tableView.tableFooterView = UIView()
     }
     
@@ -60,6 +61,7 @@ class SearchTableViewController: UITableViewController  , UIAnimatable{
     //Apiye istek atmadan önce beklediği süre
         $searchQuery.debounce(for: .milliseconds(750), scheduler: RunLoop.main)
             .sink { [unowned self](searchQuery) in
+                guard !searchQuery.isEmpty else {return}
                 showLoadingAnimation()
             self.apiService.fetchSymbolsPuplisher(keywords: searchQuery)
                 .sink {(completion) in
@@ -72,6 +74,7 @@ class SearchTableViewController: UITableViewController  , UIAnimatable{
             } receiveValue: { (searchResults) in
                 self.searchResults = searchResults
                 self.tableView.reloadData()
+                self.tableView.isScrollEnabled = true
             }.store(in: &self.subscribers)
         }.store(in: &subscribers)
         
@@ -118,4 +121,43 @@ extension SearchTableViewController {
        
         return cell
     }
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        
+        if let searchResults = self.searchResults {
+            let searchResult = searchResults.item[indexPath.item]
+            let symbol = searchResult.symbol
+            handleSelection(for: symbol , searchResult: searchResult)
+            
+        }
+        tableView.deselectRow(at: indexPath, animated: true)
+       
+    }
+    
+    
+    private func handleSelection(for symbol : String , searchResult : SearchResult){
+        showLoadingAnimation()
+        apiService.fetchTimeSeriesMonthlyAdjustedPublisher(keywords: symbol).sink { [weak self](completionResult) in
+            self?.hideLoadingAnimation()
+            switch completionResult{
+            case .failure(let error) :
+            print(error)
+            case .finished : break
+            
+            }
+        } receiveValue: { [weak self] (timeSeriesMonthlyAdjusted) in
+            self?.hideLoadingAnimation()
+            let asset = Asset(searchResult: searchResult, timeSeriesMonthlyAdjusted: timeSeriesMonthlyAdjusted)
+            self?.performSegue(withIdentifier: "showCalculator", sender: asset)
+            self?.searchController.searchBar.text = nil
+        }.store(in: &subscribers)
+    }
+    
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        if segue.identifier == "showCalculator"
+           , let destination = segue.destination as? CalculatorTableViewController
+           , let asset = sender as? Asset   {
+            destination.asset = asset
+        }
+    }
+    
 }
